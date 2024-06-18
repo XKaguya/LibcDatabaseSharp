@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Libc Search</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: row;
+            font-family: Arial, sans-serif;
+        }
+        .left-panel, .right-panel {
+            flex: 1;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .left-panel {
+            border-right: 1px solid #ccc;
+        }
+        .right-panel {
+            overflow-y: auto;
+        }
+        .input-group {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .input-group input[type="text"], .input-group button {
+            padding: 8px;
+            margin-right: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .input-group button {
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+            border: none;
+        }
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            min-height: 300px;
+        }
+        #result p {
+            font-size: 14px;
+        }
+        .result-item {
+            margin-bottom: 10px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+        }
+        .result-item a {
+            text-decoration: none;
+            color: #007bff;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<div class="left-panel">
+    <h2>Search Functions</h2>
+    <div id="inputContainer">
+        <div class="input-group">
+            <input type="text" name="func_name" value="puts" placeholder="Function Name">
+            <input type="text" name="func_offset" placeholder="Function Offset">
+            <button type="button" onclick="removeInput(this)">Cancel</button>
+        </div>
+    </div>
+    <button type="button" onclick="addInput()">Add</button>
+    <button type="button" onclick="search()">Search</button>
+</div>
+
+<div class="right-panel">
+    <h2>Search Results</h2>
+    <div id="result">
+        <p>Selected function results will be displayed here.</p>
+    </div>
+</div>
+
+<script>
+    function addInput() {
+        const container = document.getElementById('inputContainer');
+        const inputGroup = document.createElement('div');
+        inputGroup.className = 'input-group';
+        inputGroup.innerHTML = `
+            <input type="text" name="func_name" value="puts" placeholder="Function Name">
+            <input type="text" name="func_offset" placeholder="Function Offset">
+            <button type="button" onclick="removeInput(this)">Cancel</button>
+        `;
+        container.appendChild(inputGroup);
+    }
+
+    function removeInput(button) {
+        const inputGroup = button.parentNode;
+        inputGroup.parentNode.removeChild(inputGroup);
+    }
+
+    function search() {
+        const inputGroups = document.querySelectorAll('.input-group');
+        const searchParams = [];
+
+        inputGroups.forEach(group => {
+            const funcName = group.querySelector('input[name="func_name"]').value.trim();
+            const funcOffset = group.querySelector('input[name="func_offset"]').value.trim();
+            if (funcName && funcOffset) {
+                searchParams.push({ funcName, funcOffset });
+            }
+        });
+
+        performSearch(searchParams);
+    }
+
+    function performSearch(params) {
+        const resultDiv = document.getElementById('result');
+        resultDiv.innerHTML = '';
+
+        fetch('/Process/FindMatchingLibc', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(params)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.length === 0) {
+                resultDiv.innerHTML = '<p>No matching functions found.</p>';
+            } else {
+                data.forEach(item => {
+                    const resultItem = document.createElement('div');
+                    resultItem.className = 'result-item';
+                    const nameLink = document.createElement('a');
+                    nameLink.textContent = item.name;
+                    nameLink.href = `libc-details.html?libcName=${encodeURIComponent(item.name)}`;
+                    nameLink.target = '_blank';
+                    resultItem.appendChild(nameLink);
+                    resultDiv.appendChild(resultItem);
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            resultDiv.innerHTML = '<p>An error occurred while fetching libc details.</p>';
+        });
+    }
+</script>
+
+</body>
+</html>
