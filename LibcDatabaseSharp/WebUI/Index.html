@@ -130,26 +130,30 @@
             body: JSON.stringify(params)
         })
         .then(response => response.json())
-        .then(data => {
-            if (data.length === 0) {
-                resultDiv.innerHTML = '<p>No matching functions found.</p>';
-            } else {
-                data.forEach(item => {
-                    const resultItem = document.createElement('div');
-                    resultItem.className = 'result-item';
-                    const nameLink = document.createElement('a');
-                    nameLink.textContent = item.name;
-                    nameLink.href = `libc-details.html?libcName=${encodeURIComponent(item.name)}`;
-                    nameLink.target = '_blank';
-                    resultItem.appendChild(nameLink);
-                    resultDiv.appendChild(resultItem);
-                });
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            resultDiv.innerHTML = '<p>An error occurred while fetching libc details.</p>';
-        });
+            .then(data => {
+                if (!Array.isArray(data)) {
+                    resultDiv.innerHTML = '<p>No matching functions found.</p>';
+                } else {
+                    if (data.length === 0) {
+                        resultDiv.innerHTML = '<p>No matching functions found.</p>';
+                    } else {
+                        data.forEach(item => {
+                            const resultItem = document.createElement('div');
+                            resultItem.className = 'result-item';
+                            const nameLink = document.createElement('a');
+                            nameLink.textContent = item.name;
+                            nameLink.href = `libc-details.html?libcName=${encodeURIComponent(item.name)}`;
+                            nameLink.target = '_blank';
+                            resultItem.appendChild(nameLink);
+                            resultDiv.appendChild(resultItem);
+                        });
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching data:', error);
+                resultDiv.innerHTML = '<p>Error fetching data. Please try again later.</p>';
+            });
     }
 </script>
 
