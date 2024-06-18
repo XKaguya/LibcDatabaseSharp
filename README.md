@@ -23,6 +23,23 @@ LibcDatabaseSharp is a C# implementation of the libc-database, focusing on Ubunt
 
 Supports handling multiple arguments efficiently.
 
+## APIs Usage
+* GetMatchingLibc
+```
+Single Func Search
+http://ip:port/api/Api/GetMatchingLibc?funcNames={funcName}&funcOffsets={funcOffset}
+
+Multiple Func Search
+http://ip:port/api/Api/GetMatchingLibc?funcNames={funcName1}&funcOffsets={funcOffset1}&funcNames={funcName2}&funcOffsets={funcOffset2}
+```
+
+* GetOffsetByLibc
+```
+http://ip:port/api/Api/GetOffsetByLibc?libcName={libcName}&funcNames={funcName}
+
+libcName like: Ubuntu2.23-0ubuntu11.3
+```
+
 ## TODO
 Support more libc.
 Figure the version issue.
