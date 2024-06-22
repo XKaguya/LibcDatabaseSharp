@@ -20,8 +20,4 @@
       <EmbeddedResource Include="WebUI\libc-details.html" />
     </ItemGroup>
 
-    <ItemGroup>
-      <Folder Include="Enum\" />
-    </ItemGroup>
-
 </Project>

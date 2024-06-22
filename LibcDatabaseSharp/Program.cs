@@ -1,4 +1,5 @@
 ﻿using System.Net;
+using LibcDatabaseSharp.Enum;
 using LibcDatabaseSharp.Generic;
 using LibcDatabaseSharp.WebUI;
 using Microsoft.AspNetCore.Hosting;
@@ -15,6 +16,8 @@ namespace LibcDatabaseSharp
         {
             try
             {
+                Logger.SetLogLevel(LogLevel.Debug);
+                
                 File.Delete(Logger.LogFilePath);
                 
                 API.Handler.ReadAllLibcFile();

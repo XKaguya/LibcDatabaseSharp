@@ -1,11 +1,9 @@
 ﻿using System.Text.RegularExpressions;
 using ELFSharp.ELF;
 using ELFSharp.ELF.Sections;
-using ELFSharp.MachO;
 using LibcDatabaseSharp.Class;
 using LibcDatabaseSharp.Generic;
 using Newtonsoft.Json;
-using SymbolTableExtension;
 
 namespace LibcDatabaseSharp.API
 {
@@ -31,12 +29,26 @@ namespace LibcDatabaseSharp.API
             {
                 if (libc.Name == libcName)
                 {
-                    foreach (var func in libc.SymbolTable.Entries)
+                    if (libc.IsX64)
                     {
-                        if (func.Name == funcName)
+                        foreach (var func in libc.SymbolTable64.Entries)
                         {
-                            Logger.LogInfo($"{func.Name}: 0x{func.Value.ToString("X")}");
-                            return ("0x" + func.Value.ToString("X"));
+                            if (func.Name == funcName)
+                            {
+                                Logger.LogInfo($"{func.Name}: 0x{func.Value.ToString("X")}");
+                                return ("0x" + func.Value.ToString("X"));
+                            }
+                        }
+                    }
+                    else
+                    {
+                        foreach (var func in libc.SymbolTable.Entries)
+                        {
+                            if (func.Name == funcName)
+                            {
+                                Logger.LogInfo($"{func.Name}: 0x{func.Value.ToString("X")}");
+                                return ("0x" + func.Value.ToString("X"));
+                            }
                         }
                     }
                 }
@@ -53,16 +65,33 @@ namespace LibcDatabaseSharp.API
             {
                 if (libc.Name == libcName)
                 {
-                    foreach (var func in libc.SymbolTable.Entries)
+                    if (libc.IsX64)
                     {
-                        var functionDetails = new
+                        foreach (var func in libc.SymbolTable64.Entries)
                         {
-                            FunctionName = func.Name,
-                            FunctionValueHex = $"0x{func.Value:X}",
-                            FunctionSizeHex = $"0x{func.Size:X}"
-                        };
+                            var functionDetails = new
+                            {
+                                FunctionName = func.Name,
+                                FunctionValueHex = $"0x{func.Value:X}",
+                                FunctionSizeHex = $"0x{func.Size:X}"
+                            };
 
-                        details.Add(functionDetails);
+                            details.Add(functionDetails);
+                        }
+                    }
+                    else
+                    {
+                        foreach (var func in libc.SymbolTable.Entries)
+                        {
+                            var functionDetails = new
+                            {
+                                FunctionName = func.Name,
+                                FunctionValueHex = $"0x{func.Value:X}",
+                                FunctionSizeHex = $"0x{func.Size:X}"
+                            };
+
+                            details.Add(functionDetails);
+                        }
                     }
                 }
             }
@@ -88,12 +117,26 @@ namespace LibcDatabaseSharp.API
                         {
                             bool matchFound = false;
 
-                            foreach (var sym in libc.SymbolTable.Entries)
+                            if (libc.IsX64)
                             {
-                                if (sym.Name == funcName && sym.Value.ToString("X").EndsWith(parsedOffset, StringComparison.OrdinalIgnoreCase))
+                                foreach (var sym in libc.SymbolTable64.Entries)
                                 {
-                                    matchFound = true;
-                                    break;
+                                    if (sym.Name == funcName && sym.Value.ToString("X").EndsWith(parsedOffset, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        matchFound = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                foreach (var sym in libc.SymbolTable.Entries)
+                                {
+                                    if (sym.Name == funcName && sym.Value.ToString("X").EndsWith(parsedOffset, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        matchFound = true;
+                                        break;
+                                    }
                                 }
                             }
 
@@ -131,26 +174,95 @@ namespace LibcDatabaseSharp.API
             return GetMatchingLibc(new List<string> { funcName }, new List<string> { offset });
         }
         
-        private static SymbolTable<ulong>? GetSymbolTable(IELF elf)
+        private static SymbolTable<T> GetSymbolTable<T>(IELF elf) where T : struct
         {
-            SymbolTable<ulong>? symbolTable = null;
+            bool isLoaded = false;
             
-            try
+            SymbolTable<ulong>? symbolTable64 = null;
+            SymbolTable<uint>? symbolTable = null;
+
+            if (elf.Sections.Any(section => section.Name == ".symtab"))
             {
-                symbolTable = elf.GetSection(".symtab") as SymbolTable<ulong>;
+                if (elf.Class == ELFSharp.ELF.Class.Bit64)
+                {
+                    try
+                    {
+                        symbolTable64 = elf.GetSection(".symtab") as SymbolTable<ulong>;
+                    
+                        isLoaded = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("Section .symtab not found in the libc file.");
+                        return null;
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        symbolTable = elf.GetSection(".symtab") as SymbolTable<uint>;
+                    
+                        isLoaded = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("Section .symtab not found in the libc file.");
+                        return null;
+                    }
+                }
             }
-            catch (Exception ex)
+            else if (elf.Sections.Any(section => section.Name == ".dynsym") && !isLoaded)
             {
-                Logger.LogError("Section .symtab not found in the libc file.");
+                if (elf.Class == ELFSharp.ELF.Class.Bit64)
+                {
+                    try
+                    {
+                        symbolTable64 = elf.GetSection(".dynsym") as SymbolTable<ulong>;
+                    
+                        isLoaded = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("Section .dynsym not found in the libc file.");
+                        return null;
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        symbolTable = elf.GetSection(".dynsym") as SymbolTable<uint>;
+                    
+                        isLoaded = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError("Section .dynsym not found in the libc file.");
+                        return null;
+                    }
+                }
+            }
+            else
+            {
+                Logger.LogError($"ELF has no such section. {elf.Sections}");
+            }
+
+            if (symbolTable == null && symbolTable64 == null)
+            {
                 return null;
             }
 
-            if (symbolTable == null)
+            switch (elf.Class)
             {
-                return null;
+                case ELFSharp.ELF.Class.Bit32:
+                    return symbolTable as SymbolTable<T>;;
+                
+                case ELFSharp.ELF.Class.Bit64:
+                    return symbolTable64 as SymbolTable<T>;;
             }
 
-            return symbolTable;
+            return null;
         }
 
         private static bool LoadUbuntuLibcFile()
@@ -179,11 +291,11 @@ namespace LibcDatabaseSharp.API
                 
                 var pattern = @"GNU C Library \(([^)]+GLIBC [^ ]+)\)";
                 var pattern2 = @"GNU C Library \(GNU libc\) stable release version ([\d.]+)";
-
-                var commonLibc = "Libc";
+                var pattern3 = @"GNU C Library stable release version ([\d.]+)";
                 
                 var match = Regex.Match(rodataString, pattern);
                 var match2 = Regex.Match(rodataString, pattern2);
+                var match3 = Regex.Match(rodataString, pattern3);
 
                 string[] info;
                 string arch, version, name = null;
@@ -205,9 +317,29 @@ namespace LibcDatabaseSharp.API
                 {
                     var random = new Random();
                     int randomNumber = random.Next(1000, 9999);
+                    var preProcess = match2.Groups[1].Value;
+                    var result = preProcess.EndsWith(".") ? preProcess.TrimEnd('.') : preProcess;
                     
                     arch = "GNU libc";
-                    version = $"{match2.Groups[1].Value}_{randomNumber}";
+                    version = $"{result}_{randomNumber}";
+                    name = arch + version;
+    
+                    libc.Name = name;
+                    libc.Version = version;
+                    libc.Arch = arch;
+
+                    Logger.LogDebug($"Matched version: {version}");
+                    Logger.LogDebug($"Generated version with random number: {libc.Version}");
+                }
+                else if (match3.Success)
+                {
+                    var random = new Random();
+                    int randomNumber = random.Next(1000, 9999);
+                    var preProcess = match3.Groups[1].Value;
+                    var result = preProcess.EndsWith(".") ? preProcess.TrimEnd('.') : preProcess;
+                    
+                    arch = "GNU libc";
+                    version = $"{result}_{randomNumber}";
                     name = arch + version;
     
                     libc.Name = name;
@@ -226,18 +358,35 @@ namespace LibcDatabaseSharp.API
                 }
                 
                 // Get Function Table
-
-                var symbolTable = GetSymbolTable(elf);
-
-                if (symbolTable == null)
+                SymbolTable<ulong> symbolTable64 = null;
+                SymbolTable<uint> symbolTable = null;
+                
+                if (elf.Class == ELFSharp.ELF.Class.Bit32)
                 {
-                    Logger.LogError($"{name} Symbol Table is null !");
+                    libc.IsX64 = false;
+                    symbolTable = GetSymbolTable<uint>(elf);
+                }
+                else if (elf.Class == ELFSharp.ELF.Class.Bit64)
+                {
+                    libc.IsX64 = true;
+                    symbolTable64 = GetSymbolTable<ulong>(elf);
+                }
+                
+                if (symbolTable == null && symbolTable64 == null)
+                {
                     Logger.LogError($"{name} Symbol Table is null !");
                     GlobalVariables.LoadFailedLibcPaths.Add(libcPath);
                     continue;
                 }
 
-                libc.SymbolTable = symbolTable;
+                if (libc.IsX64)
+                {
+                    libc.SymbolTable64 = symbolTable64;
+                }
+                else
+                {
+                    libc.SymbolTable = symbolTable;
+                }
                 
                 // Get Debug Section
 
@@ -284,6 +433,7 @@ namespace LibcDatabaseSharp.API
             }
             
             Logger.LogInfo($"Load Complete. {GlobalVariables.Libcs.Count} were loaded successful and {GlobalVariables.LoadFailedLibcPaths.Count} were failed.");
+            
             return true;
         }
     }
