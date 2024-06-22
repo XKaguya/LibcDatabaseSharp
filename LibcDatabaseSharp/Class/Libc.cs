@@ -14,9 +14,13 @@ namespace LibcDatabaseSharp.Class
         public string Version { get; set; }
         
         public bool IsDebug { get; set; }
-
-        public SymbolTable<ulong> SymbolTable { get; set; }
-
+        
+        public bool IsX64 { get; set; }
+        
+        public SymbolTable<uint> SymbolTable { get; set; }
+        
+        public SymbolTable<ulong> SymbolTable64 { get; set; }
+        
         public override string ToString()
         {
             StringBuilder stringBuilder = new StringBuilder();
