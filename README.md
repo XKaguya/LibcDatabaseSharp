@@ -40,11 +40,6 @@ http://ip:port/api/Api/GetOffsetByLibc?libcName={libcName}&funcNames={funcName}
 libcName like: Ubuntu2.23-0ubuntu11.3
 ```
 
-## TODO
-Support more libc.
-Figure the version issue.
-And more.
-
 ## Contribute
 
 Contributions to LibcDatabaseSharp are welcome! Here's how you can contribute:
