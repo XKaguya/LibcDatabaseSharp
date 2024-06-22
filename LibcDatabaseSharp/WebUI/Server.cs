@@ -97,7 +97,7 @@ namespace LibcDatabaseSharp.WebUI
                 return "image/jpeg";
             if (resourceName.EndsWith(".gif"))
                 return "image/gif";
-            // Add more content types as needed
+
             return "application/octet-stream";
         }
     }

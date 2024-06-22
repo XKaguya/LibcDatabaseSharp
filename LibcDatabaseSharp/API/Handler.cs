@@ -11,12 +11,26 @@ namespace LibcDatabaseSharp.API
     {
         public static string? GetFuncOffset(Libc libc, string funcName)
         {
-            foreach (var func in libc.SymbolTable.Entries)
+            if (libc.IsX64)
             {
-                if (func.Name == funcName)
+                foreach (var func in libc.SymbolTable64.Entries)
                 {
-                    Logger.LogInfo($"{func.Name}: 0x{func.Value.ToString("X")}");
-                    return func.Value.ToString("X");
+                    if (func.Name == funcName)
+                    {
+                        Logger.LogInfo($"{func.Name}: 0x{func.Value.ToString("X")}");
+                        return func.Value.ToString("X");
+                    }
+                }
+            }
+            else
+            {
+                foreach (var func in libc.SymbolTable.Entries)
+                {
+                    if (func.Name == funcName)
+                    {
+                        Logger.LogInfo($"{func.Name}: 0x{func.Value.ToString("X")}");
+                        return func.Value.ToString("X");
+                    }
                 }
             }
 
@@ -109,7 +123,7 @@ namespace LibcDatabaseSharp.API
 
                 foreach (Libc libc in GlobalVariables.Libcs)
                 {
-                    if (libc.SymbolTable != null)
+                    if (libc.SymbolTable != null || libc.SymbolTable64 != null)
                     {
                         bool allMatch = true;
 
@@ -149,7 +163,7 @@ namespace LibcDatabaseSharp.API
 
                         if (allMatch)
                         {
-                            Logger.LogInfo($"Found matching libc: {libc.Name}");
+                            Logger.LogInfo($"Found matching libc: {libc.Name}", false);
                             matchingLibcs.Add(libc);
                         }
                     }
@@ -265,14 +279,16 @@ namespace LibcDatabaseSharp.API
             return null;
         }
 
-        private static bool LoadUbuntuLibcFile()
+        private static bool LoadLibcFile()
         {
             foreach (string libcPath in GlobalVariables.LibcPaths)
             {
                 IELF elf = ELFReader.Load(libcPath);
-                
+
                 // Read Libc Version
-                ISection rodataSection = null;
+                // The version detection based on .rodata section was abandoned due to the database mostly have the accure libc name.
+                
+                /*ISection rodataSection = null;
                 try
                 {
                     rodataSection = elf.GetSection(".rodata");
@@ -283,84 +299,188 @@ namespace LibcDatabaseSharp.API
                     Logger.LogError($"Skipping {libcPath}.");
                     GlobalVariables.LoadFailedLibcPaths.Add(libcPath);
                     continue;
-                }
-                
-                var reader = new BinaryReader(new MemoryStream(rodataSection.GetContents()));
+                }*/
+
+                /*var reader = new BinaryReader(new MemoryStream(rodataSection.GetContents()));
                 var rodataContent = reader.ReadBytes(rodataSection.GetContents().Length);
-                var rodataString = System.Text.Encoding.UTF8.GetString(rodataContent);
-                
-                var pattern = @"GNU C Library \(([^)]+GLIBC [^ ]+)\)";
-                var pattern2 = @"GNU C Library \(GNU libc\) stable release version ([\d.]+)";
-                var pattern3 = @"GNU C Library stable release version ([\d.]+)";
-                
-                var match = Regex.Match(rodataString, pattern);
-                var match2 = Regex.Match(rodataString, pattern2);
-                var match3 = Regex.Match(rodataString, pattern3);
+                var rodataString = System.Text.Encoding.UTF8.GetString(rodataContent);*/
 
-                string[] info;
-                string arch, version, name = null;
-                
-                Libc libc = new Libc();
-                
-                if (match.Success)
+                var patterns = new[]
                 {
-                    info = match.Groups[1].Value.Split();
-                    arch = info[0];
-                    version = info[2];
-                    name = arch + version;
-                    
-                    libc.Name = name;
-                    libc.Version = version;
-                    libc.Arch = arch;
-                }
-                else if (match2.Success)
-                {
-                    var random = new Random();
-                    int randomNumber = random.Next(1000, 9999);
-                    var preProcess = match2.Groups[1].Value;
-                    var result = preProcess.EndsWith(".") ? preProcess.TrimEnd('.') : preProcess;
-                    
-                    arch = "GNU libc";
-                    version = $"{result}_{randomNumber}";
-                    name = arch + version;
-    
-                    libc.Name = name;
-                    libc.Version = version;
-                    libc.Arch = arch;
+                    @"libc-([\d.]+)",
+                    @"glibc-(\d+\.\d+-[\w.]+)\.(\w+)\.",
+                    @"(musl)_(\d+\.\d+\.\d+-\d+)",
+                    @"([a-zA-Z0-9]+)_(\d+\.\d+)-([\w\.]+)_"
+                };
 
-                    Logger.LogDebug($"Matched version: {version}");
-                    Logger.LogDebug($"Generated version with random number: {libc.Version}");
-                }
-                else if (match3.Success)
+                Match match = null;
+                foreach (var pattern in patterns)
                 {
-                    var random = new Random();
-                    int randomNumber = random.Next(1000, 9999);
-                    var preProcess = match3.Groups[1].Value;
-                    var result = preProcess.EndsWith(".") ? preProcess.TrimEnd('.') : preProcess;
-                    
-                    arch = "GNU libc";
-                    version = $"{result}_{randomNumber}";
-                    name = arch + version;
-    
-                    libc.Name = name;
-                    libc.Version = version;
-                    libc.Arch = arch;
-
-                    Logger.LogDebug($"Matched version: {version}");
-                    Logger.LogDebug($"Generated version with random number: {libc.Version}");
+                    match = Regex.Match(libcPath, pattern);
+                    if (match.Success)
+                    {
+                        break;
+                    }
                 }
-                else
+
+                if (!match.Success)
                 {
                     Logger.LogError($"This arch is not implemented yet.");
                     Logger.LogError($"Skipping {libcPath}");
                     GlobalVariables.LoadFailedLibcPaths.Add(libcPath);
                     continue;
                 }
-                
+
+                Libc libc = new Libc();
+
+                if (match.Value.Contains("musl"))
+                {
+                    if (!match.Value.Contains("amd64") && !match.Value.Contains("i386"))
+                    {
+                        if (elf.Class == ELFSharp.ELF.Class.Bit64)
+                        {
+                            libc.Name = $"{match.Groups[1].Value}-{match.Groups[2].Value}-amd64";
+                        }
+                        else if (elf.Class == ELFSharp.ELF.Class.Bit32)
+                        {
+                            libc.Name = $"{match.Groups[1].Value}-{match.Groups[2].Value}-i386";
+                        }
+                    }
+                    else
+                    {
+                        libc.Name = $"{match.Groups[1].Value}-{match.Groups[2].Value}";
+                    }
+
+                    libc.Arch = match.Groups[1].Value;
+                    libc.Version = match.Groups[2].Value;
+                }
+                else if (match.Groups.Count == 4)
+                {
+                    if (match.Groups[1].Value == "dietlibc")
+                    {
+                        libc.Version = $"{match.Groups[2].Value}-{match.Groups[3].Value}";
+                        libc.Arch = match.Groups[1].Value;
+                        
+                        if (!match.Value.Contains("amd64") && !match.Value.Contains("i386"))
+                        {
+                            if (elf.Class == ELFSharp.ELF.Class.Bit64)
+                            {
+                                libc.Name = $"{libc.Arch}-{libc.Version}-amd64";
+                            }
+                            else if (elf.Class == ELFSharp.ELF.Class.Bit32)
+                            {
+                                libc.Name = $"{libc.Arch}-{libc.Version}-i386";
+                            }
+                        }
+                        else
+                        {
+                            libc.Name = $"{libc.Arch}-{libc.Version}";
+                        }
+                    }
+                    else if (match.Groups[3].Value.Contains("ubuntu"))
+                    {
+                        libc.Version = match.Groups[2].Value;
+                        libc.Arch = "libc6";
+
+                        if (!match.Groups[1].Value.Contains("libc6"))
+                        {
+                            libc.Name = $"{libc.Arch}-{match.Groups[3].Value}-{match.Groups[1].Value}";
+                        }
+                        else if (!match.Value.Contains("amd64") && !match.Value.Contains("i386"))
+                        {
+                            if (elf.Class == ELFSharp.ELF.Class.Bit64)
+                            {
+                                libc.Name = $"{libc.Arch}-{match.Groups[3].Value}-amd64";
+                            }
+                            else if (elf.Class == ELFSharp.ELF.Class.Bit32)
+                            {
+                                libc.Name = $"{libc.Arch}-{match.Groups[3].Value}-i386";
+                            }
+                        }
+                        else
+                        {
+                            libc.Name = $"{libc.Arch}-{match.Groups[3].Value}";
+                        }
+                    }
+                    else
+                    {
+                        libc.Version = $"{match.Groups[2].Value}-{match.Groups[3].Value}";
+                        libc.Arch = "GNU Libc";
+                        
+                        if (!match.Value.Contains("amd64") && !match.Value.Contains("i386"))
+                        {
+                            if (elf.Class == ELFSharp.ELF.Class.Bit64)
+                            {
+                                libc.Name = $"{libc.Arch}-{libc.Version}-amd64";
+                            }
+                            else if (elf.Class == ELFSharp.ELF.Class.Bit32)
+                            {
+                                libc.Name = $"{libc.Arch}-{libc.Version}-i386";
+                            }
+                        }
+                        else
+                        {
+                            libc.Name = $"{libc.Arch}-{libc.Version}";
+                        }
+                    }
+                }
+                else if (match.Groups.Count == 3)
+                {
+                    string arch = match.Groups[1].Value;
+                    string version = match.Groups[2].Value;
+                    
+                    if (!match.Value.Contains("amd64") && !match.Value.Contains("i386"))
+                    {
+                        if (elf.Class == ELFSharp.ELF.Class.Bit64)
+                        {
+                            libc.Name = $"{arch}-{version}-amd64";
+                        }
+                        else if (elf.Class == ELFSharp.ELF.Class.Bit32)
+                        {
+                            libc.Name = $"{arch}-{version}-i386";
+                        }
+                    }
+                    else
+                    {
+                        libc.Name = $"{arch}-{version}";
+                    }
+                    
+                    libc.Name = arch + version;
+                    libc.Version = version;
+                    libc.Arch = arch;
+                }
+                else if (match.Groups.Count == 2)
+                {
+                    var random = new Random();
+                    int randomNumber = random.Next(1000, 9999);
+                    
+                    string arch = "libc";
+                    string version = $"{match.Groups[1].Value}_{randomNumber}";
+                    
+                    if (!match.Value.Contains("amd64") && !match.Value.Contains("i386"))
+                    {
+                        if (elf.Class == ELFSharp.ELF.Class.Bit64)
+                        {
+                            libc.Name = $"{arch}-{version}-amd64";
+                        }
+                        else if (elf.Class == ELFSharp.ELF.Class.Bit32)
+                        {
+                            libc.Name = $"{arch}-{version}-i386";
+                        }
+                    }
+                    else
+                    {
+                        libc.Name = $"{arch}-{version}";
+                    }
+                    
+                    libc.Version = version;
+                    libc.Arch = arch;
+                }
+
                 // Get Function Table
                 SymbolTable<ulong> symbolTable64 = null;
                 SymbolTable<uint> symbolTable = null;
-                
+
                 if (elf.Class == ELFSharp.ELF.Class.Bit32)
                 {
                     libc.IsX64 = false;
@@ -371,33 +491,26 @@ namespace LibcDatabaseSharp.API
                     libc.IsX64 = true;
                     symbolTable64 = GetSymbolTable<ulong>(elf);
                 }
-                
+
                 if (symbolTable == null && symbolTable64 == null)
                 {
-                    Logger.LogError($"{name} Symbol Table is null !");
+                    Logger.LogError($"{libc.Name} Symbol Table is null!");
                     GlobalVariables.LoadFailedLibcPaths.Add(libcPath);
                     continue;
                 }
 
-                if (libc.IsX64)
-                {
-                    libc.SymbolTable64 = symbolTable64;
-                }
-                else
-                {
-                    libc.SymbolTable = symbolTable;
-                }
-                
-                // Get Debug Section
+                libc.SymbolTable = symbolTable;
+                libc.SymbolTable64 = symbolTable64;
 
+                // Get Debug Section
                 foreach (var section in elf.Sections)
                 {
                     if (section.Name.Contains("debug"))
                     {
-                        libc.IsDebug = true;   
+                        libc.IsDebug = true;
                     }
                 }
-                
+
                 GlobalVariables.Libcs.Add(libc);
             }
 
@@ -416,9 +529,8 @@ namespace LibcDatabaseSharp.API
             }
             
             GlobalVariables.LibcPaths = Directory.GetFiles(dbDirectory, "*.so", SearchOption.AllDirectories).ToList();
-
-            // Try load as Ubuntu
-            LoadUbuntuLibcFile();
+            
+            LoadLibcFile();
             
             // Try load as TODO
             if (GlobalVariables.LoadFailedLibcPaths.Count != 0)

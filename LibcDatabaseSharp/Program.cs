@@ -1,30 +1,39 @@
 ﻿using System.Net;
+using LibcDatabaseSharp.Class;
 using LibcDatabaseSharp.Enum;
 using LibcDatabaseSharp.Generic;
 using LibcDatabaseSharp.WebUI;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Newtonsoft.Json;
 
 namespace LibcDatabaseSharp
 {
     public class Program
     {
         private static CancellationTokenSource? WebCancellactionTokenSource = new();
-        public static ushort WebPort { get; set; } = 8089;
+        private static ushort WebPort { get; set; } = 8089;
+
+        private static readonly string ConfigFilePath = "config.json";
+
+        private static readonly string Version = "LibcDatabaseSharp v1.0.5 Powered by Kaguya.";
+
+        public static Config Config = null;
         
         public static async Task Main()
         {
             try
             {
-                Logger.SetLogLevel(LogLevel.Debug);
-                
-                File.Delete(Logger.LogFilePath);
-                
-                API.Handler.ReadAllLibcFile();
+                if (LoadConfig())
+                {
+                    Logger.LogInfo("Config loaded.");
+                }
 
+                File.Delete(Logger.LogFilePath);
+                API.Handler.ReadAllLibcFile();
                 InitWebServer();
-                Console.WriteLine("Task WebService started.");
-                Console.WriteLine("Press any key to stop.");
+                Logger.LogInfo(Version);
+                Logger.LogInfo("Press any key to stop.");
                 Console.ReadLine();
                 WebCancellactionTokenSource.Cancel();
                 Environment.Exit(0);
@@ -32,6 +41,47 @@ namespace LibcDatabaseSharp
             catch (Exception ex)
             {
                 Console.WriteLine($"An error occurred: {ex.Message}");
+            }
+        }
+
+        private static bool LoadConfig()
+        {
+            if (File.Exists(ConfigFilePath))
+            {
+                string file = File.ReadAllText(ConfigFilePath);
+                
+                try
+                {
+                    Config = JsonConvert.DeserializeObject<Config>(file);
+                    
+                    Utils.TryParseLogLevel(Config.LogLevel, out LogLevel logLevel);
+
+                    Logger.SetLogLevel(logLevel);
+                    WebPort = Config.WebUiPort;
+
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError('\n' + ex.Message + '\n' + ex.StackTrace);
+                    return false;
+                }
+            }
+            else
+            {
+                Logger.LogError("Config file not exist. Using default config.");
+                
+                Config config = new Config
+                {
+                    LogLevel = "Info",
+                    WebUiPort = 8089,
+                };
+                
+                string file = JsonConvert.SerializeObject(config);
+                
+                File.WriteAllText(ConfigFilePath, file);
+
+                return true;
             }
         }
         
@@ -60,7 +110,7 @@ namespace LibcDatabaseSharp
                 }
                 catch (OperationCanceledException)
                 {
-                    Console.WriteLine($"Task WebService stopped.");
+                    Logger.LogInfo($"Task WebService stopped.");
                 }
             });
         }
